@@ -566,13 +566,15 @@ fn render_browser(
     if !browser.open {
         return;
     }
+    let screen = &mut *screen;
     crate::render::browser_ui::draw(&mut screen.fb, &browser, data.is_some());
-    upload_screen(&mut screen, &mut images);
+    screen.fb.to_rgba(&mut screen.rgba);
+    upload_screen(screen, &mut images);
 }
 
-/// Convert the indexed framebuffer and upload it to the sprite's image.
+/// Upload the framebuffer's RGBA data to the sprite's image.
+/// Callers must have refreshed `screen.rgba` with [`Framebuffer::to_rgba`].
 fn upload_screen(screen: &mut Screen, images: &mut Assets<Image>) {
-    screen.fb.to_rgba(&mut screen.rgba);
     if let Some(mut img) = images.get_mut(&screen.image) {
         if let Some(data) = img.data.as_mut() {
             data.copy_from_slice(&screen.rgba);
@@ -763,21 +765,6 @@ fn render_world(
         PlayState::Playing => {}
     }
 
-    // Damage flash: tint the 3D view red.
-    if world.player.damage_flash > 0.0 {
-        let strength = (world.player.damage_flash / 0.25).clamp(0.0, 1.0);
-        if strength > 0.35 {
-            for y in 0..crate::render::framebuffer::VIEW_3D_H {
-                for x in 0..VIEW_W {
-                    let v = screen.fb.get(x, y);
-                    if v != 0 {
-                        screen.fb.put(x as i32, y as i32, 0x2c);
-                    }
-                }
-            }
-        }
-    }
-
     // The level-select overlay covers the frozen world while it is open;
     // otherwise the touch controls are drawn over the 3D view.
     if menu.open {
@@ -786,6 +773,20 @@ fn render_world(
         draw_controls(&mut screen.fb, &data.0.vga, &controls);
     }
 
+    // Damage flash: a full-screen red tint that decays, mirroring the
+    // original's palette flash.
+    screen.fb.to_rgba(&mut screen.rgba);
+    if world.player.damage_flash > 0.0 {
+        let strength = (world.player.damage_flash / 0.25).clamp(0.0, 1.0) * 0.55;
+        for px in screen.rgba.chunks_exact_mut(4) {
+            let r = px[0] as f32;
+            let g = px[1] as f32;
+            let b = px[2] as f32;
+            px[0] = (r + (255.0 - r) * strength) as u8;
+            px[1] = (g * (1.0 - strength)) as u8;
+            px[2] = (b * (1.0 - strength)) as u8;
+        }
+    }
     upload_screen(screen, &mut images);
 }
 
