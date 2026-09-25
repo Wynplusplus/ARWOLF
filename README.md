@@ -1,18 +1,144 @@
 # ARWOLF
 
-ARWOLF is the **Android continuation of
-[RWOLF](https://github.com/Wynplusplus/RWOLF)**: a clean-room reimplementation
-of **Wolfenstein 3D** built with the [Bevy](https://bevyengine.org) engine. It
+**ARWOLF** is the Android port of
+[RWOLF](https://github.com/Wynplusplus/RWOLF), a clean-room reimplementation of
+**Wolfenstein 3D** built with the [Bevy](https://bevyengine.org) engine. It
 reads the original `WL6` data files that **you** supply and plays the original
-maps, textures and digitised sounds through a from-scratch software raycaster.
-The engine, menu and configuration are shared with RWOLF; ARWOLF adds the
-Android build, on-screen touch controls and Android data discovery.
+maps, textures and digitised sounds through a from-scratch software raycaster,
+with on-screen touch controls.
 
-> **No game content is included.** ARWOLF ships no Wolfenstein 3D data and no
-> id Software code. You must provide your own legally obtained copy of the
+![ARWOLF on Android with the touch overlay](docs/android.png)
+
+> **No game content is included.** ARWOLF ships no Wolfenstein 3D data and no id
+> Software code. You must provide your own legally obtained copy of the
 > registered (WL6) files. *Wolfenstein 3D* is a trademark of its respective
 > owners; this project is unofficial and is not affiliated with or endorsed by
 > them.
+
+## Install on Android
+
+1. Download `ARWOLF-0.1.0.apk` from the
+   [latest release](https://github.com/Wynplusplus/ARWOLF/releases/latest).
+2. Install it. You will need to allow installation from unknown sources; the
+   APK is signed with the standard Android **debug** key.
+3. Push your own WL6 data to the device (see
+   [Game data](#game-data-required)).
+
+The APK contains both **arm64-v8a** (phones and tablets) and **x86_64**
+(emulators) libraries. It uses the AOSP **NativeActivity** backend — there is no
+Google Play Services or other Google library involved.
+
+Minimum Android version is **8.0 (API 26)**, required by Bevy's AAudio audio
+backend. The game runs in landscape.
+
+## Game data (required)
+
+ARWOLF ships no game data. Copy your legally obtained WL6 files to the app's
+external files directory, which the app can read without any storage
+permission:
+
+```sh
+android/push-data.sh /path/to/WOLF3D
+```
+
+or manually:
+
+```sh
+adb shell mkdir -p /sdcard/Android/data/io.github.wynplusplus.wolf3dbevy/files
+adb push WOLF3D /sdcard/Android/data/io.github.wynplusplus.wolf3dbevy/files/
+```
+
+Expected files:
+
+```
+AUDIOHED.WL6  AUDIOT.WL6   GAMEMAPS.WL6  MAPHEAD.WL6
+VGAHEAD.WL6   VGADICT.WL6  VGAGRAPH.WL6  VSWAP.WL6
+```
+
+The app searches, in order: `WOLF3D_DATA_DIR`, the `data_dir` from
+`wolf3d-bevy.toml`, the app-specific directory above, `/sdcard/WOLF3D`,
+`/storage/emulated/0/WOLF3D` and `/sdcard/Download/WOLF3D`.
+
+## Controls
+
+The on-screen gamepad is drawn over the 3D view:
+
+| Control | Action |
+| --- | --- |
+| Left half (drag) | Movement stick: up/down moves, left/right turns |
+| Right half (drag) | Turn |
+| `MENU` | Open/close the level-select overlay |
+| `1` `2` `3` `4` | Select weapon |
+| `RUN` | Run while held |
+| `FIRE` | Fire |
+| `USE` | Open doors / use switches |
+
+Tap a cell on the `MENU` overlay to pick an episode and floor, then `START`.
+
+## Building for Android
+
+Prerequisites:
+
+```sh
+rustup target add aarch64-linux-android x86_64-linux-android
+cargo install cargo-apk
+# Android SDK + NDK, then:
+export ANDROID_HOME="$HOME/Android/Sdk"
+export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/<version>"
+```
+
+Build the APK:
+
+```sh
+cargo apk build --lib --release
+```
+
+`--lib` is required: the package also contains the desktop binary, which must
+not be built for Android. The APK is written to
+`target/release/apk/wolf3d-bevy.apk`. Build a single architecture with
+`--target aarch64-linux-android` (or `x86_64-linux-android`).
+
+See [`android/README.md`](android/README.md) for more detail.
+
+## Desktop
+
+The same engine still builds and runs on the desktop (this is what RWOLF is):
+
+```sh
+cargo run --release
+```
+
+Desktop controls:
+
+| Action | Key |
+| --- | --- |
+| Move / strafe | `W` `A` `S` `D` |
+| Turn | mouse, or `←` `→` / `Q` `E` |
+| Run | `Shift` |
+| Fire | left mouse, or `Ctrl` |
+| Use / open door | `Space` |
+| Weapons | `1` `2` `3` `4` |
+| Level-select menu | `Esc` |
+
+A Flatpak manifest for the desktop build lives in [`flatpak/`](flatpak/); see
+[`flatpak/README.md`](flatpak/README.md).
+
+## Configuration
+
+Copy `wolf3d-bevy.toml.example` to `wolf3d-bevy.toml` (next to the binary, or in
+the directory you run from) to set the data directory and default
+episode/floor/difficulty:
+
+```toml
+data_dir = "/path/to/WOLF3D"
+# episode = 1
+# map = 1
+# difficulty = "normal"
+```
+
+On Android the environment variables (`WOLF3D_DATA_DIR`, `WOLF3D_EPISODE`,
+`WOLF3D_MAP`, `WOLF3D_DIFFICULTY`) are usually not available, so the data
+search path above is used instead.
 
 ## AI disclaimer
 
@@ -33,113 +159,6 @@ approach, implemented it, built it and reported back.
 
 As with any AI-generated code, treat it as unreviewed: it may contain bugs.
 There is no warranty.
-
-## Game data
-
-ARWOLF does not include any game data. Point it at your own WL6 files by copying
-`wolf3d-bevy.toml.example` to `wolf3d-bevy.toml` and editing `data_dir`:
-
-```toml
-data_dir = "/path/to/WOLF3D"
-```
-
-Alternatively set the `WOLF3D_DATA_DIR` environment variable. If neither is
-set, the engine looks in `./data`, `./WOLF3D` and `~/Downloads/WOLF3D`.
-
-Expected files:
-
-```
-AUDIOHED.WL6  AUDIOT.WL6   GAMEMAPS.WL6  MAPHEAD.WL6
-VGAHEAD.WL6   VGADICT.WL6  VGAGRAPH.WL6  VSWAP.WL6
-```
-
-## Build and run
-
-```sh
-cargo run --release
-```
-
-### Flatpak
-
-A Flatpak manifest lives in [`flatpak/`](flatpak/). With `flatpak-builder`
-installed:
-
-```sh
-flatpak/build.sh                                  # build + install
-flatpak/setup-config.sh /path/to/WOLF3D           # point it at your data
-flatpak run io.github.wynplusplus.wolf3dbevy
-```
-
-See [`flatpak/README.md`](flatpak/README.md) for details.
-
-### Android
-
-ARWOLF builds as a normal Bevy app with `#[bevy_main]` and is packaged with
-[`cargo-apk`](https://crates.io/crates/cargo-apk) using the **NativeActivity**
-backend (`android-native-activity`, part of AOSP — no Google Play Services or
-other Google libraries are involved).
-
-Prerequisites:
-
-```sh
-rustup target add aarch64-linux-android x86_64-linux-android
-cargo install cargo-apk
-# Android SDK + NDK, then:
-export ANDROID_HOME="$HOME/Android/Sdk"
-export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/<version>"
-```
-
-Build the APK:
-
-```sh
-cargo apk build --lib --release
-```
-
-`--lib` is required: the package also contains the desktop binary, which must
-not be built for Android. The APK is written to `target/release/apk/`.
-
-Install it, then push your own WL6 data into the app-specific external files
-directory (writable over `adb` without any storage permission):
-
-```sh
-adb install -r target/release/apk/wolf3d-bevy.apk
-adb push WOLF3D /sdcard/Android/data/io.github.wynplusplus.wolf3dbevy/files/WOLF3D
-```
-
-The app searches, in order: `WOLF3D_DATA_DIR`, the `data_dir` from
-`wolf3d-bevy.toml`, the app-specific directory above, `/sdcard/WOLF3D`,
-`/storage/emulated/0/WOLF3D` and `/sdcard/Download/WOLF3D`.
-
-`min_sdk_version` is 26 because `bevy_audio` uses AAudio, and `strip = "strip"`
-keeps the debug APK from ballooning to gigabytes.
-
-## Controls
-
-### Desktop
-
-| Action | Key |
-| --- | --- |
-| Move / strafe | `W` `A` `S` `D` |
-| Turn | mouse, or `←` `→` / `Q` `E` |
-| Run | `Shift` |
-| Fire | left mouse, or `Ctrl` |
-| Use / open door | `Space` |
-| Weapons | `1` `2` `3` `4` |
-| Level-select menu | `Esc` |
-
-### Touch (Android)
-
-| Control | Action |
-| --- | --- |
-| Left half (drag) | Movement stick: up/down moves, left/right turns |
-| Right half (drag) | Turn |
-| `MENU` | Open/close the level-select overlay |
-| `1` `2` `3` `4` | Select weapon |
-| `RUN` | Run while held |
-| `FIRE` | Fire |
-| `USE` | Open doors / use switches |
-
-The touch overlay can be exercised on the desktop by setting `WOLF3D_TOUCH=1`.
 
 ## License
 
