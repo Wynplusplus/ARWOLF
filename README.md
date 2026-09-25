@@ -7,6 +7,10 @@ reads the original `WL6` data files that **you** supply and plays the original
 maps, textures and digitised sounds through a from-scratch software raycaster,
 with on-screen touch controls.
 
+> **AI-generated.** ARWOLF was written entirely by an AI coding agent from the
+> repository owner's prompts. Treat the code as unreviewed; there is no
+> warranty. See [AI disclaimer](#ai-disclaimer).
+
 ![ARWOLF on Android with the touch overlay](docs/android.png)
 
 > **No game content is included.** ARWOLF ships no Wolfenstein 3D data and no id
@@ -157,23 +161,11 @@ search path above is used instead.
 
 ## AI disclaimer
 
-This project was written **entirely by an AI coding agent** (DeepSeek V4.1
-Flash, running in OpenCode), driven by a series of natural-language prompts
-from the repository owner. The owner specified the features and reviewed and
-tested the results; the AI wrote all source code, tests and documentation.
-
-The prompting was a sequence of short, concrete English requests — for example
-*"reimplement Wolfenstein 3D in Bevy so it loads the original WL6 data"*,
-followed by targeted fixes and features such as *"it crashes opening a door"*,
-*"the turn direction is reversed"*, *"build a level-select UI accessible with
-Esc"*, *"add a config where the user supplies their own game folder"*,
-*"create a Flatpak with install instructions"*, *"continue the fork for
-Android"* (touch controls, APK packaging and data discovery) and *"push it to
-git as a fork of RWOLF under the name ARWOLF"*. For each prompt the AI chose an
-approach, implemented it, built it and reported back.
-
-As with any AI-generated code, treat it as unreviewed: it may contain bugs.
-There is no warranty.
+ARWOLF was written **entirely by an AI coding agent** (DeepSeek V4.1 Flash,
+running in OpenCode) from the repository owner's natural-language prompts. The
+owner specified the features and tested the results; the AI wrote all source
+code, tests and documentation. As with any AI-generated code, treat it as
+unreviewed: it may contain bugs, and there is no warranty.
 
 ## License
 
