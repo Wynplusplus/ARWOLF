@@ -243,6 +243,12 @@ fn setup(
         "Could not find Wolfenstein 3D data. Pick your WL6 folder in the app, \
          set WOLF3D_DATA_DIR, or set `data_dir` in wolf3d-bevy.toml."
     );
+    // On Android, ask for storage access up front so the picker can read
+    // shared storage such as Download.
+    if !crate::android::granted() {
+        crate::android::request();
+        browser.access_requested = true;
+    }
     browser.open_default();
     browser.status = "NO GAME DATA - PICK YOUR WOLF3D FOLDER".to_string();
 }
@@ -421,11 +427,32 @@ fn apply_touch(
 fn browse_input(
     keys: Res<ButtonInput<KeyCode>>,
     controls: Res<TouchControls>,
+    time: Res<Time>,
     data: Option<Res<DataRes>>,
+    mut refresh_timer: Local<f32>,
     mut browser: ResMut<Browser>,
 ) {
     if !browser.open {
         return;
+    }
+
+    // Storage permission: ask once when a folder could not be read, then
+    // re-check periodically so the picker refreshes after the user returns
+    // from the Android settings page.
+    if browser.access_error {
+        if !browser.access_requested {
+            browser.access_requested = true;
+            if !crate::android::granted() {
+                crate::android::request();
+            }
+        }
+        *refresh_timer -= time.delta_secs();
+        if *refresh_timer <= 0.0 {
+            *refresh_timer = 1.0;
+            if crate::android::granted() {
+                browser.refresh();
+            }
+        }
     }
 
     if keys.just_pressed(KeyCode::ArrowDown) {
@@ -458,7 +485,13 @@ fn browse_input(
 
     if let Some(p) = controls.tap {
         let (x, y) = (p.x, p.y);
-        if inside(layout::close_rect(), x, y) {
+        if browser.access_error && inside(layout::grant_rect(), x, y) {
+            if crate::android::granted() {
+                browser.refresh();
+            } else {
+                crate::android::request();
+            }
+        } else if inside(layout::close_rect(), x, y) {
             if data.is_some() {
                 browser.open = false;
             }

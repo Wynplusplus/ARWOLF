@@ -94,6 +94,9 @@ fn draw_help(fb: &mut Framebuffer) {
 }
 
 fn draw_buttons(fb: &mut Framebuffer, browser: &Browser) {
+    if browser.access_error {
+        button(fb, layout::grant_rect(), "GRANT ACCESS", true);
+    }
     button(fb, layout::up_rect(), "UP", true);
     button(fb, layout::roots_rect(), "ROOTS", true);
     let use_label = if browser.has_game {

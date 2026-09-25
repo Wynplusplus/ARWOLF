@@ -31,6 +31,10 @@ required-features = ["desktop"]
 # chunks in a WAV container; Bevy's default `audio` feature only enables vorbis.
 bevy = { version = "0.19", features = ["android-native-activity", "wav"] }
 
+# JNI is used to request storage access on Android (see `src/android.rs`).
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21"
+
 # Bevy is slow to compile and run in the default dev profile. The raycaster in
 # this crate is CPU bound, so optimise our own code too.
 [profile.dev]

@@ -41,10 +41,12 @@ ARWOLF ships no game data. On first launch it opens an in-app **folder
 picker**: navigate to the folder that contains `VSWAP.WL6` and press **USE
 THIS FOLDER**. The choice is saved and reused on the next launch.
 
-On Android 11+ the picker needs the **All files access** permission to read
-shared storage such as `Download`. Enable it in *Settings → Apps → ARWOLF →
-Permissions → Files and media → Allow management of all files*. Without it you
-can still use the app-specific folder below (which needs no permission).
+On Android 11+ the picker needs **All files access** to read shared storage
+such as `Download`. ARWOLF asks for it on first launch by opening the relevant
+system settings page; you can also enable it manually in *Settings → Apps →
+ARWOLF → Permissions → Files and media → Allow management of all files*. If a
+folder cannot be read, the picker shows a **GRANT ACCESS** button. Without the
+permission you can still use the app-specific folder below, which needs none.
 
 Alternatively, push your legally obtained WL6 files to the app's external
 files directory with the helper script:

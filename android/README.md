@@ -63,13 +63,16 @@ No game data is bundled. Install the APK; on first launch it opens an in-app
 **folder picker** where you navigate to your WL6 folder and press **USE THIS
 FOLDER**. The choice is saved for next time.
 
-On Android 11+ the picker needs the **All files access** permission to read
-shared storage such as `Download`:
+On Android 11+ the picker needs **All files access** to read shared storage
+such as `Download`. ARWOLF requests it at runtime by opening the relevant
+system settings page on first launch (older devices get the normal
+`READ_EXTERNAL_STORAGE` dialog). You can also enable it manually:
 
 > Settings → Apps → ARWOLF → Permissions → Files and media → Allow management
 > of all files
 
-Without it you can still use the app-specific folder, which needs no
+If a folder cannot be read, the picker shows a **GRANT ACCESS** button. Without
+the permission you can still use the app-specific folder, which needs no
 permission. Push your own legally obtained files there with:
 
 ```sh

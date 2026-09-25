@@ -6049,6 +6049,7 @@ name = "wolf3d-bevy"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "jni 0.21.1",
 ]
 
 [[package]]

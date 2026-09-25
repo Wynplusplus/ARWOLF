@@ -38,7 +38,7 @@ pub mod layout {
     pub const SCROLL_DOWN_Y: i32 = 92;
     pub const SCROLL_DOWN_H: i32 = 46;
 
-    pub const BUTTON_Y: i32 = 156;
+    pub const BUTTON_Y: i32 = 166;
     pub const BUTTON_H: i32 = 26;
     pub const UP_X: i32 = 8;
     pub const UP_W: i32 = 76;
@@ -46,6 +46,8 @@ pub mod layout {
     pub const ROOTS_W: i32 = 76;
     pub const USE_X: i32 = 176;
     pub const USE_W: i32 = 136;
+    /// "Grant access" button, shown only when a folder could not be read.
+    pub const GRANT_Y: i32 = 142;
 
     /// A row rectangle, or `None` when `index` is not currently visible.
     pub fn row_rect(visible: usize) -> (i32, i32, i32, i32) {
@@ -77,6 +79,11 @@ pub mod layout {
     pub fn close_rect() -> (i32, i32, i32, i32) {
         (286, 6, 30, 16)
     }
+
+    /// The "grant access" button, shown when a folder could not be read.
+    pub fn grant_rect() -> (i32, i32, i32, i32) {
+        (60, GRANT_Y, 200, 18)
+    }
 }
 
 /// Hit-test a framebuffer point against a rectangle.
@@ -96,6 +103,11 @@ pub struct Browser {
     pub scroll: usize,
     pub status: String,
     pub has_game: bool,
+    /// True when the last `refresh` could not read the directory (usually a
+    /// missing storage permission on Android).
+    pub access_error: bool,
+    /// True once we have asked for storage access this session.
+    pub access_requested: bool,
     /// Set when the user confirms a folder; the app then loads it.
     pub pending: Option<PathBuf>,
     root_index: usize,
@@ -150,6 +162,8 @@ impl Default for Browser {
             scroll: 0,
             status: String::new(),
             has_game: false,
+            access_error: false,
+            access_requested: false,
             pending: None,
             root_index,
         };
@@ -184,6 +198,7 @@ impl Browser {
 
     pub fn refresh(&mut self) {
         self.entries.clear();
+        self.access_error = false;
         self.has_game = self.cwd.join(format!("VSWAP.{EXT}")).is_file();
         match std::fs::read_dir(&self.cwd) {
             Ok(read) => {
@@ -220,6 +235,7 @@ impl Browser {
             }
             Err(e) => {
                 self.status = format!("CANNOT READ THIS FOLDER: {e}");
+                self.access_error = true;
             }
         }
         if self.selected >= self.entries.len() {
@@ -334,8 +350,8 @@ mod tests {
 
     #[test]
     fn layout_hit_testing() {
-        assert!(inside(layout::up_rect(), 20.0, 165.0));
-        assert!(!inside(layout::up_rect(), 300.0, 165.0));
+        assert!(inside(layout::up_rect(), 20.0, 175.0));
+        assert!(!inside(layout::up_rect(), 300.0, 175.0));
         let r = layout::row_rect(0);
         assert!(inside(r, 10.0, r.1 as f32 + 1.0));
     }

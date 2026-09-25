@@ -13,6 +13,7 @@
 use bevy::app::AppExit;
 use bevy::prelude::*;
 
+pub mod android;
 pub mod app;
 pub mod config;
 pub mod data;
