@@ -1,0 +1,12 @@
+target/
+data/
+WOLF3D/
+*.WL6
+*.WL1
+
+# User configuration (machine-specific paths); `.example` is tracked.
+wolf3d-bevy.toml
+
+# Flatpak build output
+build-dir/
+.flatpak-builder/

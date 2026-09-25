@@ -1,0 +1,26 @@
+[package]
+name = "wolf3d-bevy"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "A clean-room reimplementation of Wolfenstein 3D in the Bevy game engine"
+repository = "https://example.invalid/wolf3d-bevy"
+
+[dependencies]
+# `android-native-activity` is only meaningful on Android; on desktop it is
+# inert. It is enabled so the same feature set is used everywhere.
+# `wav` is required because `app::wav_from_i16` wraps the original Wolf3D PCM
+# chunks in a WAV container; Bevy's default `audio` feature only enables vorbis.
+bevy = { version = "0.19", features = ["android-native-activity", "wav"] }
+
+# Bevy is slow to compile and run in the default dev profile. The raycaster in
+# this crate is CPU bound, so optimise our own code too.
+[profile.dev]
+opt-level = 3
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

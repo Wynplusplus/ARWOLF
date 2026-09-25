@@ -1,0 +1,56 @@
+# Flatpak manifest for wolf3d-bevy.
+#
+# Local build (see flatpak/README.md):
+#   flatpak-builder --user --install --force-clean build-dir \
+#       io.github.wynplusplus.wolf3dbevy.yaml
+#
+# NOTE: this manifest fetches crates from crates.io during the build, so the
+# build sandbox needs network access (the `--share=network` build-arg below).
+# Flathub does not allow network access at build time; to publish there, vendor
+# the dependencies with `flatpak-cargo-generator` and replace the `cargo build`
+# line with `cargo build --release --offline` (see flatpak/README.md).
+
+app-id: io.github.wynplusplus.wolf3dbevy
+runtime: org.freedesktop.Platform
+runtime-version: '24.08'
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: wolf3d-bevy
+
+finish-args:
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  - --socket=pulseaudio
+  # Read-only access to ~/Downloads, a common place for the WL6 data. For a
+  # folder elsewhere, see `flatpak override` in flatpak/README.md.
+  - --filesystem=xdg-download:ro
+
+modules:
+  - name: wolf3d-bevy
+    buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/rust-stable/bin
+      env:
+        CARGO_HOME: /run/build/wolf3d-bevy/cargo
+      build-args:
+        - --share=network
+    build-commands:
+      - cargo build --release --locked
+      - install -Dm755 target/release/wolf3d-bevy /app/bin/wolf3d-bevy
+      - install -Dm644 flatpak/io.github.wynplusplus.wolf3dbevy.desktop
+        /app/share/applications/io.github.wynplusplus.wolf3dbevy.desktop
+      - install -Dm644 flatpak/io.github.wynplusplus.wolf3dbevy.metainfo.xml
+        /app/share/metainfo/io.github.wynplusplus.wolf3dbevy.metainfo.xml
+      - install -Dm644 flatpak/io.github.wynplusplus.wolf3dbevy.svg
+        /app/share/icons/hicolor/scalable/apps/io.github.wynplusplus.wolf3dbevy.svg
+    sources:
+      - type: dir
+        path: .
+        skip:
+          - target
+          - .git
+          - .flatpak-builder
+          - build-dir

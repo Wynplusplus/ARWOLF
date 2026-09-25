@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<component type="desktop-application">
+  <id>io.github.wynplusplus.wolf3dbevy</id>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+  <name>Wolfenstein 3D (Bevy)</name>
+  <summary>Clean-room Wolfenstein 3D reimplementation</summary>
+
+  <description>
+    <p>
+      A from-scratch reimplementation of the Wolfenstein 3D engine built with
+      the Bevy game engine. It renders the original WL6 maps, wall textures,
+      sprites and digitised sounds through a software raycaster.
+    </p>
+    <p>
+      No game data is bundled. You must supply your own legally obtained copy
+      of the registered Wolfenstein 3D (WL6) files and point the app at them in
+      its configuration file. See the project README for details.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">io.github.wynplusplus.wolf3dbevy.desktop</launchable>
+  <url type="homepage">https://codeberg.org/wynplusplus/wolf3d-bevy</url>
+  <url type="bugtracker">https://codeberg.org/wynplusplus/wolf3d-bevy/issues</url>
+
+  <developer id="io.github.wynplusplus">
+    <name>wynplusplus</name>
+  </developer>
+
+  <categories>
+    <category>Game</category>
+  </categories>
+
+  <content_rating type="oars-1.1">
+    <content_attribute id="violence-fantasy">moderate</content_attribute>
+  </content_rating>
+
+  <releases>
+    <release version="0.1.0" date="2026-09-25"/>
+  </releases>
+</component>

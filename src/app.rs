@@ -1,0 +1,713 @@
+//! Bevy integration: window, input, the game loop and screen upload.
+//!
+//! SPDX-License-Identifier: MIT
+
+use std::sync::Arc;
+
+use bevy::asset::RenderAssetUsages;
+use bevy::audio::{AudioPlayer, AudioSource, PlaybackSettings};
+use bevy::camera::ScalingMode;
+use bevy::ecs::schedule::common_conditions::resource_exists;
+use bevy::image::ImageSampler;
+use bevy::input::mouse::AccumulatedMouseMotion;
+use bevy::prelude::*;
+use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
+use bevy::render::view::screenshot::{Screenshot, save_to_disk};
+use bevy::window::{CursorGrabMode, CursorOptions, WindowResolution};
+
+use crate::data::{GameData, audio::SAMPLE_RATE};
+use crate::game::actor::Difficulty;
+use crate::game::world::{InputState, PlayState, World};
+use crate::render::framebuffer::{Framebuffer, VIEW_H, VIEW_W};
+use crate::render::hud::{
+    EPISODE_MAPS, EPISODES, draw_level_select, draw_status_bar,
+};
+use crate::render::raycast::{
+    Camera, collect_sprites, render_sprites, render_walls, render_weapon,
+};
+
+const SCALE: usize = 2;
+
+#[derive(Resource)]
+struct DataRes(GameData);
+
+#[derive(Resource)]
+struct WorldRes(World);
+
+#[derive(Resource, Default)]
+struct InputRes(InputState);
+
+#[derive(Resource)]
+struct Screen {
+    image: Handle<Image>,
+    fb: Framebuffer,
+    rgba: Vec<u8>,
+    zbuf: [f32; VIEW_W],
+}
+
+#[derive(Resource)]
+struct SoundBank {
+    handles: Vec<Handle<AudioSource>>,
+}
+
+#[derive(Resource, Default)]
+struct MouseCaptured(bool);
+
+/// The `Escape` level-select overlay. While open the game is paused.
+#[derive(Resource)]
+struct LevelMenu {
+    open: bool,
+    /// Zero-based episode/map selection.
+    episode: usize,
+    map: usize,
+}
+
+impl Default for LevelMenu {
+    fn default() -> Self {
+        Self {
+            open: false,
+            episode: 0,
+            map: 0,
+        }
+    }
+}
+
+#[derive(Resource, Default)]
+struct ScreenshotState {
+    frames: u32,
+    done: bool,
+}
+
+pub fn run() -> AppExit {
+    App::new()
+        .add_plugins(DefaultPlugins.set(WindowPlugin {
+            primary_window: Some(Window {
+                title: "Wolfenstein 3D (Bevy reimplementation)".into(),
+                resolution: WindowResolution::new((VIEW_W * SCALE) as u32, (VIEW_H * SCALE) as u32),
+                ..default()
+            }),
+            ..default()
+        }))
+        .insert_resource(ClearColor(Color::BLACK))
+        .init_resource::<MouseCaptured>()
+        .init_resource::<ScreenshotState>()
+        .init_resource::<LevelMenu>()
+        .add_systems(Startup, (setup, capture_cursor))
+        .add_systems(
+            Update,
+            (
+                read_input,
+                handle_level_menu,
+                update_world.run_if(game_active),
+                render_world,
+                play_sounds.run_if(game_active),
+                handle_transitions.run_if(game_active),
+                maybe_screenshot,
+            )
+                .chain()
+                .run_if(resource_exists::<DataRes>),
+        )
+        .run()
+}
+
+/// Dev helper: when `WOLF3D_SCREENSHOT` is set, save a PNG of the window after
+/// a short warm-up. Used to verify the GPU presentation path.
+fn maybe_screenshot(mut commands: Commands, mut state: ResMut<ScreenshotState>) {
+    let Ok(path) = std::env::var("WOLF3D_SCREENSHOT") else {
+        return;
+    };
+    if state.done {
+        return;
+    }
+    state.frames += 1;
+    if state.frames == 90 {
+        state.done = true;
+        commands
+            .spawn(Screenshot::primary_window())
+            .observe(save_to_disk(path));
+    }
+}
+
+fn setup(
+    mut commands: Commands,
+    mut images: ResMut<Assets<Image>>,
+    mut audio_sources: ResMut<Assets<AudioSource>>,
+    mut exits: MessageWriter<AppExit>,
+) {
+    if let Some(src) = &crate::config::get().source {
+        info!("Using config {}", src.display());
+    }
+    let Some(dir) = crate::data::find_data_dir() else {
+        error!(
+            "Could not find Wolfenstein 3D data. Set `data_dir` in wolf3d-bevy.toml \
+             (see wolf3d-bevy.toml.example), set WOLF3D_DATA_DIR, or place the WL6 \
+             files in ./data"
+        );
+        // Exit with an error instead of leaving an empty window on screen.
+        exits.write(AppExit::error());
+        return;
+    };
+    let data = match GameData::load(&dir) {
+        Ok(d) => d,
+        Err(e) => {
+            error!("Failed to load game data from {}: {e}", dir.display());
+            exits.write(AppExit::error());
+            return;
+        }
+    };
+    info!("Loaded Wolfenstein 3D data from {}", dir.display());
+
+    // Sound bank: wrap each PCM chunk in a WAV container.
+    let mut handles = Vec::with_capacity(data.audio.count());
+    for i in 0..data.audio.count() {
+        let samples = data.audio.sound_i16(i);
+        let wav = wav_from_i16(&samples, SAMPLE_RATE);
+        handles.push(audio_sources.add(AudioSource {
+            bytes: Arc::from(wav.into_boxed_slice()),
+        }));
+    }
+
+    let episode = start_episode();
+    let map = start_map();
+    let difficulty = start_difficulty();
+    info!(
+        "Starting episode {} map {} (difficulty {:?})",
+        episode + 1,
+        map + 1,
+        difficulty
+    );
+    let world =
+        World::new(&data, episode, map, difficulty).expect("requested map should exist");
+
+    let mut fb = Framebuffer::new(VIEW_W, VIEW_H);
+    fb.clear(0);
+    let rgba = vec![0u8; VIEW_W * VIEW_H * 4];
+    let image = images.add(make_image(&rgba));
+    let image_handle = image.clone();
+
+    commands.insert_resource(DataRes(data));
+    commands.insert_resource(WorldRes(world));
+    commands.insert_resource(LevelMenu {
+        open: false,
+        episode,
+        map,
+    });
+    commands.insert_resource(InputRes::default());
+    commands.insert_resource(Screen {
+        image,
+        fb,
+        rgba,
+        zbuf: [f32::INFINITY; VIEW_W],
+    });
+    commands.insert_resource(SoundBank { handles });
+
+    // 2D camera sized so the whole 320x200 framebuffer is always visible.
+    commands.spawn((
+        Camera2d,
+        Projection::Orthographic(OrthographicProjection {
+            scaling_mode: ScalingMode::AutoMin {
+                min_width: VIEW_W as f32,
+                min_height: VIEW_H as f32,
+            },
+            ..OrthographicProjection::default_2d()
+        }),
+    ));
+
+    commands.spawn((
+        Sprite {
+            image: image_handle,
+            custom_size: Some(Vec2::new(VIEW_W as f32, VIEW_H as f32)),
+            ..default()
+        },
+        Transform::from_xyz(0.0, 0.0, 0.0),
+    ));
+}
+
+fn make_image(rgba: &[u8]) -> Image {
+    let mut image = Image::new_fill(
+        Extent3d {
+            width: VIEW_W as u32,
+            height: VIEW_H as u32,
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        rgba,
+        TextureFormat::Rgba8UnormSrgb,
+        RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
+    );
+    image.sampler = ImageSampler::nearest();
+    image
+}
+
+fn capture_cursor(mut cursor: Query<&mut CursorOptions, With<Window>>) {
+    if let Ok(mut c) = cursor.single_mut() {
+        c.grab_mode = CursorGrabMode::Locked;
+        c.visible = false;
+    }
+}
+
+/// Starting episode (zero-based). `WOLF3D_EPISODE` overrides the config file.
+fn start_episode() -> usize {
+    std::env::var("WOLF3D_EPISODE")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .or(crate::config::get().episode)
+        .map(|e| e.saturating_sub(1).min(EPISODES - 1))
+        .unwrap_or(0)
+}
+
+/// Starting map (zero-based). `WOLF3D_MAP` overrides the config file.
+fn start_map() -> usize {
+    std::env::var("WOLF3D_MAP")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .or(crate::config::get().map)
+        .map(|m| m.saturating_sub(1).min(EPISODE_MAPS - 1))
+        .unwrap_or(0)
+}
+
+/// Starting difficulty. `WOLF3D_DIFFICULTY` overrides the config file.
+fn start_difficulty() -> Difficulty {
+    let name = std::env::var("WOLF3D_DIFFICULTY")
+        .ok()
+        .or_else(|| crate::config::get().difficulty.clone())
+        .unwrap_or_default();
+    match name.to_ascii_lowercase().as_str() {
+        "baby" => Difficulty::Baby,
+        "easy" => Difficulty::Easy,
+        "hard" => Difficulty::Hard,
+        _ => Difficulty::Normal,
+    }
+}
+
+fn read_input(
+    keys: Res<ButtonInput<KeyCode>>,
+    buttons: Res<ButtonInput<MouseButton>>,
+    mouse: Res<AccumulatedMouseMotion>,
+    mut input: ResMut<InputRes>,
+) {
+    let i = &mut input.0;
+    *i = InputState::default();
+
+    let mut forward = 0.0;
+    if keys.pressed(KeyCode::KeyW) || keys.pressed(KeyCode::ArrowUp) {
+        forward += 1.0;
+    }
+    if keys.pressed(KeyCode::KeyS) || keys.pressed(KeyCode::ArrowDown) {
+        forward -= 1.0;
+    }
+    i.forward = forward;
+
+    let mut strafe = 0.0;
+    if keys.pressed(KeyCode::KeyA) {
+        strafe -= 1.0;
+    }
+    if keys.pressed(KeyCode::KeyD) {
+        strafe += 1.0;
+    }
+    i.strafe = strafe;
+
+    // `update_player` does `angle -= turn * speed`, and increasing `angle`
+    // rotates counter-clockwise (left). So left must be negative and right
+    // positive; the previous signs made Q/ArrowLeft steer right.
+    let mut turn = 0.0;
+    if keys.pressed(KeyCode::ArrowLeft) || keys.pressed(KeyCode::KeyQ) {
+        turn -= 1.0;
+    }
+    if keys.pressed(KeyCode::ArrowRight) || keys.pressed(KeyCode::KeyE) {
+        turn += 1.0;
+    }
+    i.turn = turn;
+    i.mouse_dx = mouse.delta.x;
+    i.run = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
+    i.fire = buttons.pressed(MouseButton::Left) || keys.pressed(KeyCode::ControlLeft);
+    i.fire_pressed = buttons.just_pressed(MouseButton::Left) || keys.just_pressed(KeyCode::ControlLeft);
+    i.use_pressed = keys.just_pressed(KeyCode::Space);
+
+    if keys.just_pressed(KeyCode::Digit1) {
+        i.next_weapon = Some(0);
+    }
+    if keys.just_pressed(KeyCode::Digit2) {
+        i.next_weapon = Some(1);
+    }
+    if keys.just_pressed(KeyCode::Digit3) {
+        i.next_weapon = Some(2);
+    }
+    if keys.just_pressed(KeyCode::Digit4) {
+        i.next_weapon = Some(3);
+    }
+}
+
+/// True while the level-select overlay is closed (the game is running).
+fn game_active(menu: Res<LevelMenu>) -> bool {
+    !menu.open
+}
+
+fn set_cursor_capture(
+    cursor: &mut Query<&mut CursorOptions, With<Window>>,
+    captured: &mut MouseCaptured,
+    capture: bool,
+) {
+    captured.0 = capture;
+    if let Ok(mut c) = cursor.single_mut() {
+        if capture {
+            c.grab_mode = CursorGrabMode::Locked;
+            c.visible = false;
+        } else {
+            c.grab_mode = CursorGrabMode::None;
+            c.visible = true;
+        }
+    }
+}
+
+/// `Escape` toggles the level-select overlay. While it is open the game is
+/// paused; pick an episode and floor with the arrow keys (or WASD), then start
+/// it with `Enter`/`Space`. Number keys `1`-`6` jump to an episode directly.
+fn handle_level_menu(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut menu: ResMut<LevelMenu>,
+    mut world: ResMut<WorldRes>,
+    mut input: ResMut<InputRes>,
+    data: Res<DataRes>,
+    mut captured: ResMut<MouseCaptured>,
+    mut cursor: Query<&mut CursorOptions, With<Window>>,
+) {
+    // Escape toggles the menu and releases/recaptures the mouse.
+    if keys.just_pressed(KeyCode::Escape) {
+        menu.open = !menu.open;
+        if menu.open {
+            // Start from the level currently being played.
+            menu.episode = world.0.episode;
+            menu.map = world.0.map_index;
+        }
+        set_cursor_capture(&mut cursor, &mut captured, !menu.open);
+        return;
+    }
+    if !menu.open {
+        return;
+    }
+
+    let left = keys.just_pressed(KeyCode::ArrowLeft) || keys.just_pressed(KeyCode::KeyA);
+    let right = keys.just_pressed(KeyCode::ArrowRight) || keys.just_pressed(KeyCode::KeyD);
+    let up = keys.just_pressed(KeyCode::ArrowUp) || keys.just_pressed(KeyCode::KeyW);
+    let down = keys.just_pressed(KeyCode::ArrowDown) || keys.just_pressed(KeyCode::KeyS);
+
+    if left {
+        menu.map = if menu.map == 0 { EPISODE_MAPS - 1 } else { menu.map - 1 };
+    }
+    if right {
+        menu.map = (menu.map + 1) % EPISODE_MAPS;
+    }
+    if up {
+        menu.episode = if menu.episode == 0 { EPISODES - 1 } else { menu.episode - 1 };
+    }
+    if down {
+        menu.episode = (menu.episode + 1) % EPISODES;
+    }
+
+    const EPISODE_KEYS: [KeyCode; EPISODES] = [
+        KeyCode::Digit1,
+        KeyCode::Digit2,
+        KeyCode::Digit3,
+        KeyCode::Digit4,
+        KeyCode::Digit5,
+        KeyCode::Digit6,
+    ];
+    for (e, &key) in EPISODE_KEYS.iter().enumerate() {
+        if keys.just_pressed(key) {
+            menu.episode = e;
+        }
+    }
+
+    if keys.just_pressed(KeyCode::Enter)
+        || keys.just_pressed(KeyCode::NumpadEnter)
+        || keys.just_pressed(KeyCode::Space)
+    {
+        let difficulty = world.0.difficulty;
+        if let Some(new_world) = World::new(&data.0, menu.episode, menu.map, difficulty) {
+            world.0 = new_world;
+        }
+        menu.open = false;
+        // Don't let the confirming keypress leak into the new level (e.g. Space
+        // would immediately trigger a "use" action).
+        input.0 = InputState::default();
+        set_cursor_capture(&mut cursor, &mut captured, true);
+    }
+}
+
+fn update_world(time: Res<Time>, input: Res<InputRes>, mut world: ResMut<WorldRes>) {
+    let dt = time.delta_secs().min(0.05);
+    world.0.update(dt, &input.0);
+    if input.0.use_pressed {
+        world.0.use_action();
+    }
+}
+
+fn render_world(
+    data: Res<DataRes>,
+    world: Res<WorldRes>,
+    menu: Res<LevelMenu>,
+    mut screen: ResMut<Screen>,
+    mut images: ResMut<Assets<Image>>,
+) {
+    let screen = &mut *screen;
+    let world = &world.0;
+    let vswap = &data.0.vswap;
+
+    let cam = Camera {
+        x: world.player.x,
+        y: world.player.y,
+        angle: world.player.angle,
+    };
+
+    render_walls(&mut screen.fb, vswap, &world.level, cam, &mut screen.zbuf);
+    let sprites = collect_sprites(&world.level, &world.actors, world.player.angle);
+    render_sprites(&mut screen.fb, vswap, cam, &screen.zbuf, &sprites);
+    render_weapon(&mut screen.fb, vswap, world.player.weapon_sprite());
+    draw_status_bar(&mut screen.fb, &data.0.vga, &world.hud);
+    match world.state {
+        PlayState::Died => {
+            crate::render::hud::draw_center_text(
+                &mut screen.fb,
+                &data.0.vga,
+                "YOU DIED - PRESS ANY KEY",
+                70,
+                4,
+            );
+        }
+        PlayState::LevelComplete => {
+            crate::render::hud::draw_center_text(
+                &mut screen.fb,
+                &data.0.vga,
+                "LEVEL COMPLETE",
+                70,
+                2,
+            );
+        }
+        PlayState::Playing => {}
+    }
+
+    // Damage flash: tint the 3D view red.
+    if world.player.damage_flash > 0.0 {
+        let strength = (world.player.damage_flash / 0.25).clamp(0.0, 1.0);
+        if strength > 0.35 {
+            for y in 0..crate::render::framebuffer::VIEW_3D_H {
+                for x in 0..VIEW_W {
+                    let v = screen.fb.get(x, y);
+                    if v != 0 {
+                        screen.fb.put(x as i32, y as i32, 0x2c);
+                    }
+                }
+            }
+        }
+    }
+
+    // The level-select overlay covers the frozen world while it is open.
+    if menu.open {
+        draw_level_select(&mut screen.fb, &data.0.vga, menu.episode, menu.map);
+    }
+
+    screen.fb.to_rgba(&mut screen.rgba);
+    if let Some(mut img) = images.get_mut(&screen.image) {
+        if let Some(data) = img.data.as_mut() {
+            data.copy_from_slice(&screen.rgba);
+        } else {
+            img.data = Some(screen.rgba.clone());
+        }
+    }
+}
+
+fn play_sounds(
+    mut commands: Commands,
+    world: Res<WorldRes>,
+    bank: Res<SoundBank>,
+) {
+    // Avoid a wall of sound; play at most a few distinct effects per frame.
+    let mut played = 0;
+    let mut seen = [false; 512];
+    for &s in &world.0.sounds {
+        if s >= bank.handles.len() || seen[s] || played >= 4 {
+            continue;
+        }
+        seen[s] = true;
+        played += 1;
+        commands.spawn((
+            AudioPlayer::new(bank.handles[s].clone()),
+            PlaybackSettings::DESPAWN,
+        ));
+    }
+}
+
+fn handle_transitions(mut world: ResMut<WorldRes>, data: Res<DataRes>) {
+    match world.0.state {
+        PlayState::Died => {
+            if world.0.transition_timer > 2.5 {
+                world.0.restart_level(&data.0);
+            }
+        }
+        PlayState::LevelComplete => {
+            if world.0.transition_timer > 1.5 {
+                world.0.next_level(&data.0);
+            }
+        }
+        PlayState::Playing => {}
+    }
+}
+
+/// Wrap signed 16-bit mono PCM in a minimal WAV container so Bevy's audio
+/// backend can decode it.
+fn wav_from_i16(samples: &[i16], sample_rate: u32) -> Vec<u8> {
+    let data_len = samples.len() * 2;
+    let mut v = Vec::with_capacity(44 + data_len);
+    v.extend_from_slice(b"RIFF");
+    v.extend_from_slice(&((36 + data_len) as u32).to_le_bytes());
+    v.extend_from_slice(b"WAVE");
+    v.extend_from_slice(b"fmt ");
+    v.extend_from_slice(&16u32.to_le_bytes());
+    v.extend_from_slice(&1u16.to_le_bytes()); // PCM
+    v.extend_from_slice(&1u16.to_le_bytes()); // mono
+    v.extend_from_slice(&sample_rate.to_le_bytes());
+    v.extend_from_slice(&(sample_rate * 2).to_le_bytes()); // byte rate
+    v.extend_from_slice(&2u16.to_le_bytes()); // block align
+    v.extend_from_slice(&16u16.to_le_bytes()); // bits per sample
+    v.extend_from_slice(b"data");
+    v.extend_from_slice(&(data_len as u32).to_le_bytes());
+    for s in samples {
+        v.extend_from_slice(&s.to_le_bytes());
+    }
+    v
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        DataRes, InputRes, LevelMenu, MouseCaptured, WorldRes, handle_level_menu, wav_from_i16,
+    };
+    use bevy::audio::{AudioSource, Decodable};
+    use bevy::prelude::*;
+    use std::sync::Arc;
+    use crate::game::actor::Difficulty;
+    use crate::game::world::World;
+
+    /// Tap a key once: press it and run the schedule, then clear the
+    /// just-pressed edge so the next tap registers again.
+    fn tap(app: &mut App, key: KeyCode) {
+        {
+            let mut keys = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+            keys.reset_all();
+            keys.press(key);
+        }
+        app.update();
+    }
+
+    #[test]
+    fn level_menu_navigates_and_starts_selected_level() {
+        let Some(dir) = crate::data::find_data_dir() else {
+            return;
+        };
+        let data = crate::data::GameData::load(&dir).unwrap();
+        let world = World::new(&data, 0, 0, Difficulty::Normal).unwrap();
+
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins);
+        app.insert_resource(DataRes(data));
+        app.insert_resource(WorldRes(world));
+        app.insert_resource(LevelMenu {
+            open: true,
+            episode: 0,
+            map: 0,
+        });
+        app.insert_resource(MouseCaptured(false));
+        app.insert_resource(InputRes::default());
+        app.init_resource::<ButtonInput<KeyCode>>();
+        app.add_systems(Update, handle_level_menu);
+
+        // Right, right, down -> episode 2 (index 1), floor 3 (index 2).
+        tap(&mut app, KeyCode::ArrowRight);
+        tap(&mut app, KeyCode::ArrowRight);
+        tap(&mut app, KeyCode::ArrowDown);
+        {
+            let menu = app.world().resource::<LevelMenu>();
+            assert_eq!((menu.episode, menu.map), (1, 2));
+        }
+
+        tap(&mut app, KeyCode::Enter);
+        {
+            let menu = app.world().resource::<LevelMenu>();
+            assert!(!menu.open, "menu should close after starting a level");
+        }
+        let world = app.world().resource::<WorldRes>();
+        assert_eq!((world.0.episode, world.0.map_index), (1, 2));
+    }
+
+    /// Wrapping in the grid: left from floor 1 goes to the last floor, and up
+    /// from episode 1 goes to the last episode.
+    #[test]
+    fn level_menu_wraps_selection() {
+        let Some(dir) = crate::data::find_data_dir() else {
+            return;
+        };
+        let data = crate::data::GameData::load(&dir).unwrap();
+        let world = World::new(&data, 0, 0, Difficulty::Normal).unwrap();
+
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins);
+        app.insert_resource(DataRes(data));
+        app.insert_resource(WorldRes(world));
+        app.insert_resource(LevelMenu {
+            open: true,
+            episode: 0,
+            map: 0,
+        });
+        app.insert_resource(MouseCaptured(false));
+        app.insert_resource(InputRes::default());
+        app.init_resource::<ButtonInput<KeyCode>>();
+        app.add_systems(Update, handle_level_menu);
+
+        tap(&mut app, KeyCode::ArrowLeft);
+        tap(&mut app, KeyCode::ArrowUp);
+        let menu = app.world().resource::<LevelMenu>();
+        assert_eq!(menu.map, crate::render::hud::EPISODE_MAPS - 1);
+        assert_eq!(menu.episode, crate::render::hud::EPISODES - 1);
+    }
+
+    /// Guard against regressing the `wav` Bevy feature: the game wraps Wolf3D
+    /// PCM in a WAV container, and Bevy's default `audio` feature only enables
+    /// vorbis. If `wav` is missing, decoding panics with `UnrecognizedFormat`
+    /// (this is exactly what broke at startup before).
+    #[test]
+    fn wrapped_pcm_decodes_as_wav() {
+        let samples: Vec<i16> = (0..128).map(|i| (i as i16) * 64).collect();
+        let wav = wav_from_i16(&samples, crate::data::audio::SAMPLE_RATE);
+        let source = AudioSource {
+            bytes: Arc::from(wav.into_boxed_slice()),
+        };
+        let decoded: Vec<_> = source.decoder().take(8).collect();
+        assert_eq!(decoded.len(), 8, "WAV decoder produced no samples");
+    }
+
+    /// Decode every non-empty Wolf3D sound chunk through Bevy's WAV path, so a
+    /// malformed/unsupported chunk in the data set is caught here rather than
+    /// as a mid-game panic.
+    #[test]
+    fn all_real_sound_chunks_decode() {
+        let Some(dir) = crate::data::find_data_dir() else {
+            return;
+        };
+        let data = crate::data::GameData::load(&dir).unwrap();
+        for i in 0..data.audio.count() {
+            let samples = data.audio.sound_i16(i);
+            if samples.is_empty() {
+                continue; // The data set has unused empty chunks; nothing plays them.
+            }
+            let wav = wav_from_i16(&samples, crate::data::audio::SAMPLE_RATE);
+            let source = AudioSource {
+                bytes: Arc::from(wav.into_boxed_slice()),
+            };
+            assert!(
+                source.decoder().count() > 0,
+                "sound chunk {i} failed to decode"
+            );
+        }
+    }
+}

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Wolfenstein 3D (Bevy)
+Comment=Clean-room Wolfenstein 3D reimplementation
+Exec=wolf3d-bevy
+Icon=io.github.wynplusplus.wolf3dbevy
+Terminal=false
+Type=Application
+Categories=Game;ActionGame;
+Keywords=wolfenstein;fps;raycaster;shooter;

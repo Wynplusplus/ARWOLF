@@ -1,0 +1,24 @@
+# wolf3d-bevy configuration
+#
+# Copy this file to `wolf3d-bevy.toml` (next to the binary, or in the directory
+# you run from) and point `data_dir` at your own legally obtained Wolfenstein 3D
+# (WL6) data. No game data is bundled with this project.
+#
+# The file is searched for, in order:
+#   1. $WOLF3D_CONFIG
+#   2. ./wolf3d-bevy.toml
+#   3. wolf3d-bevy.toml next to the executable
+#   4. $XDG_CONFIG_HOME/wolf3d-bevy/config.toml  (or ~/.config/...)
+#
+# Environment variables still win over these values.
+
+# Directory containing VSWAP.WL6, GAMEMAPS.WL6, VGAGRAPH.WL6, AUDIOT.WL6, ...
+# `~` is expanded to your home directory. Quotes are optional.
+data_dir = "/home/you/Downloads/WOLF3D"
+
+# Optional defaults for the first level played. `1`-based.
+# episode = 1
+# map = 1
+
+# Optional default difficulty: baby, easy, normal or hard.
+# difficulty = "normal"
