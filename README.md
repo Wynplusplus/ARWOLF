@@ -11,8 +11,6 @@ with on-screen touch controls.
 > repository owner's prompts. Treat the code as unreviewed; there is no
 > warranty. See [AI disclaimer](#ai-disclaimer).
 
-![ARWOLF on Android with the touch overlay](docs/android.png)
-
 > **No game content is included.** ARWOLF ships no Wolfenstein 3D data and no id
 > Software code. You must provide your own legally obtained copy of the
 > registered (WL6) files. *Wolfenstein 3D* is a trademark of its respective
