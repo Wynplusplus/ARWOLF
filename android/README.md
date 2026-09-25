@@ -30,6 +30,33 @@ Build for a single architecture (e.g. for an emulator) with
 lists `aarch64-linux-android` and `x86_64-linux-android` for the default
 multi-architecture build.
 
+## Release signing
+
+cargo-apk refuses to sign a `--release` build unless a keystore is configured.
+It looks in `[package.metadata.android.signing.release]` in `Cargo.toml`, or in
+the `CARGO_APK_RELEASE_KEYSTORE` and `CARGO_APK_RELEASE_KEYSTORE_PASSWORD`
+environment variables.
+
+For a hobby release you can reuse the standard Android debug keystore (its
+password is the public string `android`):
+
+```sh
+CARGO_APK_RELEASE_KEYSTORE="$HOME/.android/debug.keystore" \
+CARGO_APK_RELEASE_KEYSTORE_PASSWORD="android" \
+cargo apk build --lib --release
+```
+
+For a real release, generate your own keystore and keep it out of version
+control:
+
+```sh
+keytool -genkeypair -v -keystore release.keystore \
+  -alias arwolf -keyalg RSA -keysize 2048 -validity 10000
+```
+
+Then point `CARGO_APK_RELEASE_KEYSTORE` at it and set the password. The signed
+APK is written to `target/release/apk/wolf3d-bevy.apk`.
+
 ## Install and supply data
 
 No game data is bundled. Install the APK and push your own legally obtained WL6

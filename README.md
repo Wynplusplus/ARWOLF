@@ -98,6 +98,21 @@ not be built for Android. The APK is written to
 `target/release/apk/wolf3d-bevy.apk`. Build a single architecture with
 `--target aarch64-linux-android` (or `x86_64-linux-android`).
 
+Release builds must be signed. cargo-apk reads the keystore from
+`[package.metadata.android.signing.release]` or from the
+`CARGO_APK_RELEASE_KEYSTORE` and `CARGO_APK_RELEASE_KEYSTORE_PASSWORD`
+environment variables. For a hobby release you can reuse the Android debug
+keystore:
+
+```sh
+CARGO_APK_RELEASE_KEYSTORE="$HOME/.android/debug.keystore" \
+CARGO_APK_RELEASE_KEYSTORE_PASSWORD="android" \
+cargo apk build --lib --release
+```
+
+For a real release, generate your own keystore with `keytool` and keep it
+private.
+
 See [`android/README.md`](android/README.md) for more detail.
 
 ## Desktop
