@@ -35,6 +35,7 @@ pub enum MenuHit {
     Episode(usize),
     Map(usize),
     Start,
+    Files,
     Back,
 }
 
@@ -66,18 +67,27 @@ pub fn map_rect(index: usize) -> Rect {
 
 pub fn start_rect() -> Rect {
     Rect {
-        x: 44,
+        x: 8,
         y: 166,
-        w: 104,
+        w: 96,
+        h: 22,
+    }
+}
+
+pub fn files_rect() -> Rect {
+    Rect {
+        x: 112,
+        y: 166,
+        w: 96,
         h: 22,
     }
 }
 
 pub fn back_rect() -> Rect {
     Rect {
-        x: 172,
+        x: 216,
         y: 166,
-        w: 104,
+        w: 96,
         h: 22,
     }
 }
@@ -96,6 +106,9 @@ pub fn menu_hit(x: f32, y: f32) -> Option<MenuHit> {
     }
     if start_rect().contains(x, y) {
         return Some(MenuHit::Start);
+    }
+    if files_rect().contains(x, y) {
+        return Some(MenuHit::Files);
     }
     if back_rect().contains(x, y) {
         return Some(MenuHit::Back);
@@ -240,6 +253,8 @@ pub fn draw_level_select(fb: &mut Framebuffer, vga: &VgaData, episode: usize, ma
 
     let start = start_rect();
     draw_cell(fb, font, "START", start.x, start.y, start.w, start.h, true);
+    let files = files_rect();
+    draw_cell(fb, font, "FILES", files.x, files.y, files.w, files.h, false);
     let back = back_rect();
     draw_cell(fb, font, "BACK", back.x, back.y, back.w, back.h, false);
 }

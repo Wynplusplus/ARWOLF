@@ -68,6 +68,15 @@ pub fn find_data_dir() -> Option<PathBuf> {
             p.display()
         );
     }
+    if let Some(p) = crate::config::runtime_data_dir() {
+        if is_data_dir(&p) {
+            return Some(p);
+        }
+        eprintln!(
+            "warning: selected data_dir {} does not contain VSWAP.{EXT}",
+            p.display()
+        );
+    }
     if let Some(p) = crate::config::get().data_dir.clone() {
         if is_data_dir(&p) {
             return Some(p);
@@ -107,7 +116,6 @@ pub fn is_data_dir(dir: impl AsRef<Path>) -> bool {
 
 /// The Android package name, used to locate the app-specific external files
 /// directory. Must match `[package.metadata.android] package` in `Cargo.toml`.
-#[cfg(target_os = "android")]
 pub const ANDROID_PACKAGE: &str = "io.github.wynplusplus.wolf3dbevy";
 
 /// Create the app-specific external files directory on Android so that the

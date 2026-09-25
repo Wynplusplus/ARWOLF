@@ -2,6 +2,9 @@
 //!
 //! SPDX-License-Identifier: MIT
 
+pub mod browser_ui;
+pub mod error_screen;
+pub mod font;
 pub mod framebuffer;
 pub mod hud;
 pub mod raycast;

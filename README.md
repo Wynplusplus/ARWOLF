@@ -37,9 +37,17 @@ backend. The game runs in landscape.
 
 ## Game data (required)
 
-ARWOLF ships no game data. Copy your legally obtained WL6 files to the app's
-external files directory, which the app can read without any storage
-permission:
+ARWOLF ships no game data. On first launch it opens an in-app **folder
+picker**: navigate to the folder that contains `VSWAP.WL6` and press **USE
+THIS FOLDER**. The choice is saved and reused on the next launch.
+
+On Android 11+ the picker needs the **All files access** permission to read
+shared storage such as `Download`. Enable it in *Settings → Apps → ARWOLF →
+Permissions → Files and media → Allow management of all files*. Without it you
+can still use the app-specific folder below (which needs no permission).
+
+Alternatively, push your legally obtained WL6 files to the app's external
+files directory with the helper script:
 
 ```sh
 android/push-data.sh /path/to/WOLF3D
@@ -59,9 +67,10 @@ AUDIOHED.WL6  AUDIOT.WL6   GAMEMAPS.WL6  MAPHEAD.WL6
 VGAHEAD.WL6   VGADICT.WL6  VGAGRAPH.WL6  VSWAP.WL6
 ```
 
-The app searches, in order: `WOLF3D_DATA_DIR`, the `data_dir` from
-`wolf3d-bevy.toml`, the app-specific directory above, `/sdcard/WOLF3D`,
-`/storage/emulated/0/WOLF3D` and `/sdcard/Download/WOLF3D`.
+The app searches, in order: `WOLF3D_DATA_DIR`, the folder chosen in the picker,
+the `data_dir` from `wolf3d-bevy.toml`, the app-specific directory above,
+`/sdcard/WOLF3D`, `/storage/emulated/0/WOLF3D` and
+`/sdcard/Download/WOLF3D`.
 
 ## Controls
 
@@ -72,6 +81,7 @@ The on-screen gamepad is drawn over the 3D view:
 | Left half (drag) | Movement stick: up/down moves, left/right turns |
 | Right half (drag) | Turn |
 | `MENU` | Open/close the level-select overlay |
+| `FILES` | Open the game-folder picker (also `F` on desktop) |
 | `1` `2` `3` `4` | Select weapon |
 | `RUN` | Run while held |
 | `FIRE` | Fire |
