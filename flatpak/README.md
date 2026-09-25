@@ -28,9 +28,9 @@ Add the Flathub remote and install the runtimes/SDK the manifest uses:
 flatpak remote-add --if-not-exists --user flathub https://flathub.org/repo/flathub.flatpakrepo
 
 flatpak install --user flathub \
-  org.freedesktop.Platform//24.08 \
-  org.freedesktop.Sdk//24.08 \
-  org.freedesktop.Sdk.Extension.rust-stable//24.08
+  org.freedesktop.Platform//25.08 \
+  org.freedesktop.Sdk//25.08 \
+  org.freedesktop.Sdk.Extension.rust-stable//25.08
 ```
 
 The `--install-deps-from=flathub` flag in the build script installs these

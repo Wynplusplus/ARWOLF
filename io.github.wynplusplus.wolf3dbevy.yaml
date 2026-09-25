@@ -12,7 +12,7 @@
 
 app-id: io.github.wynplusplus.wolf3dbevy
 runtime: org.freedesktop.Platform
-runtime-version: '24.08'
+runtime-version: '25.08'
 sdk: org.freedesktop.Sdk
 sdk-extensions:
   - org.freedesktop.Sdk.Extension.rust-stable
