@@ -14,14 +14,17 @@ use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
 use bevy::window::{CursorGrabMode, CursorOptions, WindowResolution};
+#[cfg(target_os = "android")]
+use bevy::window::{MonitorSelection, WindowMode};
 
 use crate::data::{GameData, audio::SAMPLE_RATE};
 use crate::game::actor::Difficulty;
 use crate::game::world::{InputState, PlayState, World};
 use crate::render::framebuffer::{Framebuffer, VIEW_H, VIEW_W};
 use crate::render::hud::{
-    EPISODE_MAPS, EPISODES, draw_level_select, draw_status_bar,
+    EPISODE_MAPS, EPISODES, MenuHit, draw_level_select, draw_status_bar, menu_hit,
 };
+use crate::touch::{TouchControls, draw_controls, read_touch};
 use crate::render::raycast::{
     Camera, collect_sprites, render_sprites, render_walls, render_weapon,
 };
@@ -82,8 +85,12 @@ pub fn run() -> AppExit {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
-                title: "Wolfenstein 3D (Bevy reimplementation)".into(),
+                title: "ARWOLF".into(),
                 resolution: WindowResolution::new((VIEW_W * SCALE) as u32, (VIEW_H * SCALE) as u32),
+                // Phones get the whole screen; there is no window chrome and
+                // the touch overlay assumes it can use the full surface.
+                #[cfg(target_os = "android")]
+                mode: WindowMode::BorderlessFullscreen(MonitorSelection::Primary),
                 ..default()
             }),
             ..default()
@@ -92,11 +99,14 @@ pub fn run() -> AppExit {
         .init_resource::<MouseCaptured>()
         .init_resource::<ScreenshotState>()
         .init_resource::<LevelMenu>()
+        .init_resource::<TouchControls>()
         .add_systems(Startup, (setup, capture_cursor))
         .add_systems(
             Update,
             (
                 read_input,
+                read_touch,
+                apply_touch,
                 handle_level_menu,
                 update_world.run_if(game_active),
                 render_world,
@@ -137,6 +147,8 @@ fn setup(
     if let Some(src) = &crate::config::get().source {
         info!("Using config {}", src.display());
     }
+    // On Android this creates the directory the user pushes their data into.
+    crate::data::prepare_storage();
     let Some(dir) = crate::data::find_data_dir() else {
         error!(
             "Could not find Wolfenstein 3D data. Set `data_dir` in wolf3d-bevy.toml \
@@ -338,6 +350,29 @@ fn read_input(
     }
 }
 
+/// Merge touch input into this frame's [`InputState`]. Keyboard/mouse input
+/// already gathered by [`read_input`] is preserved.
+fn apply_touch(
+    menu: Res<LevelMenu>,
+    controls: Res<TouchControls>,
+    mut input: ResMut<InputRes>,
+) {
+    if !controls.enabled || menu.open {
+        return;
+    }
+    let i = &mut input.0;
+    i.forward += controls.movement.y;
+    i.turn += controls.movement.x;
+    i.mouse_dx += controls.look_dx;
+    i.fire |= controls.fire;
+    i.fire_pressed |= controls.fire_pressed;
+    i.use_pressed |= controls.use_pressed;
+    i.run |= controls.run;
+    if i.next_weapon.is_none() {
+        i.next_weapon = controls.weapon;
+    }
+}
+
 /// True while the level-select overlay is closed (the game is running).
 fn game_active(menu: Res<LevelMenu>) -> bool {
     !menu.open
@@ -365,6 +400,7 @@ fn set_cursor_capture(
 /// it with `Enter`/`Space`. Number keys `1`-`6` jump to an episode directly.
 fn handle_level_menu(
     keys: Res<ButtonInput<KeyCode>>,
+    controls: Res<TouchControls>,
     mut menu: ResMut<LevelMenu>,
     mut world: ResMut<WorldRes>,
     mut input: ResMut<InputRes>,
@@ -372,8 +408,8 @@ fn handle_level_menu(
     mut captured: ResMut<MouseCaptured>,
     mut cursor: Query<&mut CursorOptions, With<Window>>,
 ) {
-    // Escape toggles the menu and releases/recaptures the mouse.
-    if keys.just_pressed(KeyCode::Escape) {
+    // Escape (or the on-screen MENU button) toggles the overlay.
+    if keys.just_pressed(KeyCode::Escape) || controls.menu_pressed {
         menu.open = !menu.open;
         if menu.open {
             // Start from the level currently being played.
@@ -419,9 +455,26 @@ fn handle_level_menu(
         }
     }
 
+    // Touch: tap a cell to select it, tap START to play or BACK to close.
+    let mut touch_start = false;
+    if let Some(p) = controls.tap {
+        match menu_hit(p.x, p.y) {
+            Some(MenuHit::Episode(e)) => menu.episode = e,
+            Some(MenuHit::Map(m)) => menu.map = m,
+            Some(MenuHit::Start) => touch_start = true,
+            Some(MenuHit::Back) => {
+                menu.open = false;
+                set_cursor_capture(&mut cursor, &mut captured, true);
+                return;
+            }
+            None => {}
+        }
+    }
+
     if keys.just_pressed(KeyCode::Enter)
         || keys.just_pressed(KeyCode::NumpadEnter)
         || keys.just_pressed(KeyCode::Space)
+        || touch_start
     {
         let difficulty = world.0.difficulty;
         if let Some(new_world) = World::new(&data.0, menu.episode, menu.map, difficulty) {
@@ -447,6 +500,7 @@ fn render_world(
     data: Res<DataRes>,
     world: Res<WorldRes>,
     menu: Res<LevelMenu>,
+    controls: Res<TouchControls>,
     mut screen: ResMut<Screen>,
     mut images: ResMut<Assets<Image>>,
 ) {
@@ -502,9 +556,12 @@ fn render_world(
         }
     }
 
-    // The level-select overlay covers the frozen world while it is open.
+    // The level-select overlay covers the frozen world while it is open;
+    // otherwise the touch controls are drawn over the 3D view.
     if menu.open {
         draw_level_select(&mut screen.fb, &data.0.vga, menu.episode, menu.map);
+    } else {
+        draw_controls(&mut screen.fb, &data.0.vga, &controls);
     }
 
     screen.fb.to_rgba(&mut screen.rgba);
@@ -620,6 +677,7 @@ mod tests {
         app.insert_resource(MouseCaptured(false));
         app.insert_resource(InputRes::default());
         app.init_resource::<ButtonInput<KeyCode>>();
+        app.init_resource::<crate::touch::TouchControls>();
         app.add_systems(Update, handle_level_menu);
 
         // Right, right, down -> episode 2 (index 1), floor 3 (index 2).
@@ -662,6 +720,7 @@ mod tests {
         app.insert_resource(MouseCaptured(false));
         app.insert_resource(InputRes::default());
         app.init_resource::<ButtonInput<KeyCode>>();
+        app.init_resource::<crate::touch::TouchControls>();
         app.add_systems(Update, handle_level_menu);
 
         tap(&mut app, KeyCode::ArrowLeft);

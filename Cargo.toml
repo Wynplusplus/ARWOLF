@@ -6,6 +6,24 @@ license = "MIT"
 description = "A clean-room reimplementation of Wolfenstein 3D in the Bevy game engine"
 repository = "https://example.invalid/wolf3d-bevy"
 
+[features]
+# The desktop binary is gated behind this feature so that cargo-apk, which
+# builds every target in the package, only ever sees the cdylib. It is enabled
+# by default so `cargo run` and the Flatpak keep working.
+default = ["desktop"]
+desktop = []
+
+# A library target is required by cargo-apk (it builds the app as a shared
+# object on Android). The desktop binary in src/main.rs calls into it.
+[lib]
+name = "wolf3d_bevy"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "wolf3d-bevy"
+path = "src/main.rs"
+required-features = ["desktop"]
+
 [dependencies]
 # `android-native-activity` is only meaningful on Android; on desktop it is
 # inert. It is enabled so the same feature set is used everywhere.
@@ -24,3 +42,24 @@ opt-level = 3
 [profile.release]
 lto = "thin"
 codegen-units = 1
+
+# --- Android packaging (cargo-apk) -------------------------------------------
+[package.metadata.android]
+package = "io.github.wynplusplus.wolf3dbevy"
+apk_name = "wolf3d-bevy"
+build_targets = ["aarch64-linux-android", "x86_64-linux-android"]
+# Strip debug symbols from the shared libraries; without this the debug build
+# produces a multi-gigabyte APK.
+strip = "strip"
+
+[package.metadata.android.sdk]
+target_sdk_version = 33
+# bevy_audio (via cpal/AAudio) requires API 26+.
+min_sdk_version = 26
+
+[package.metadata.android.application]
+label = "ARWOLF"
+
+# The game is designed for a 4:3 landscape view; keep phones in landscape.
+[package.metadata.android.application.activity]
+orientation = "landscape"

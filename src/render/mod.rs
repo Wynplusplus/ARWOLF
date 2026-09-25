@@ -146,4 +146,37 @@ mod tests {
         }
         std::fs::write(std::env::temp_dir().join("wolf3d_text.ppm"), ppm).unwrap();
     }
+
+    /// Render the on-screen touch gamepad over a game frame for inspection.
+    #[test]
+    fn render_touch_controls() {
+        let Some(dir) = crate::data::find_data_dir() else {
+            return;
+        };
+        let data = GameData::load(&dir).unwrap();
+        let world = World::new(&data, 0, 0, Difficulty::Normal).unwrap();
+        let mut fb = Framebuffer::new(VIEW_W, VIEW_H);
+        let cam = Camera {
+            x: world.player.x,
+            y: world.player.y,
+            angle: world.player.angle,
+        };
+        let mut zbuf = [f32::INFINITY; VIEW_W];
+        render_walls(&mut fb, &data.vswap, &world.level, cam, &mut zbuf);
+        draw_status_bar(&mut fb, &data.vga, &world.hud);
+
+        let mut controls = crate::touch::TouchControls::default();
+        controls.enabled = true;
+        controls.movement = bevy::math::Vec2::new(0.0, 1.0);
+        controls.fire = true;
+        controls.run = true;
+        controls.weapon = Some(2);
+        crate::touch::draw_controls(&mut fb, &data.vga, &controls);
+
+        let mut ppm = format!("P6\n{} {}\n255\n", VIEW_W, VIEW_H).into_bytes();
+        for &idx in &fb.pixels {
+            ppm.extend_from_slice(&palette::to_rgb(idx));
+        }
+        std::fs::write(std::env::temp_dir().join("wolf3d_touch.ppm"), ppm).unwrap();
+    }
 }
