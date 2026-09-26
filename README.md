@@ -19,7 +19,7 @@ with on-screen touch controls.
 
 ## Install on Android
 
-1. Download `ARWOLF-0.1.4.apk` from the
+1. Download `ARWOLF-0.2.0.apk` from the
    [latest release](https://github.com/Wynplusplus/ARWOLF/releases/latest).
 2. Install it. You will need to allow installation from unknown sources; the
    APK is signed with the standard Android **debug** key.
@@ -85,9 +85,12 @@ The on-screen gamepad is drawn over the 3D view:
 | `1` `2` `3` `4` | Select weapon |
 | `RUN` | Run while held |
 | `FIRE` | Fire |
-| `USE` | Open doors / use switches |
+| `USE` | Open doors / push secret walls / use switches |
 
-Tap a cell on the `MENU` overlay to pick an episode and floor, then `START`.
+Tap a cell on the `MENU` overlay to pick an episode, floor and difficulty, then
+`START`. The game also has pushable secret walls, secret floors, an
+end-of-floor intermission with kill/secret/treasure ratios, and a game-over
+screen.
 
 ## Building for Android
 
