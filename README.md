@@ -19,7 +19,7 @@ with on-screen touch controls.
 
 ## Install on Android
 
-1. Download `ARWOLF-1.0.0.apk` from the
+1. Download `ARWOLF-1.0.1.apk` from the
    [latest release](https://github.com/Wynplusplus/ARWOLF/releases/latest).
 2. Install it. You will need to allow installation from unknown sources; the
    APK is signed with the standard Android **debug** key.
